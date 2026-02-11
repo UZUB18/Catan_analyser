@@ -1,0 +1,11 @@
+[project]
+name = "catan-analyzer"
+version = "0.1.0"
+description = "Simple Catan opening settlement analyzer with Tkinter UI."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
