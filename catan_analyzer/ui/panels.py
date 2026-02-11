@@ -178,7 +178,6 @@ class AnalyzerControls(ttk.LabelFrame):
         self.mode_card_best_use.grid(row=4, column=0, sticky="ew", pady=(2, 0))
 
         self._card_text_widgets = [
-            self.mode_card_heading,
             self.mode_card_summary,
             self.mode_card_reliability,
             self.mode_card_speed,
@@ -412,7 +411,7 @@ class AnalyzerControls(ttk.LabelFrame):
 
         button_frame = ttk.Frame(self)
         button_frame.grid(row=16, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-        self.randomize_button = ttk.Button(button_frame, text="Randomize", command=self._on_randomize)
+        self.randomize_button = ttk.Button(button_frame, text="New Map", command=self._on_randomize)
         self.randomize_button.pack(side="left", fill="x", expand=True)
         self.analyze_button = ttk.Button(button_frame, text="Analyze", command=self._on_analyze)
         self.analyze_button.pack(side="left", fill="x", expand=True, padx=(8, 0))
@@ -751,12 +750,37 @@ class AnalyzerControls(ttk.LabelFrame):
     def apply_theme(self, theme: UiTheme) -> None:
         self._card_fade_start = theme.card_text_start
         self._card_fade_end = theme.card_text_end
-        self.mode_card_frame.configure(bg=theme.card_bg, highlightbackground=theme.card_border)
+        self.mode_card_frame.configure(
+            bg=theme.card_bg,
+            highlightbackground=theme.card_border,
+            highlightcolor=theme.card_border,
+        )
         self.theme_row.configure(bg=theme.card_bg)
-        self.theme_label.configure(bg=theme.card_bg, fg=theme.card_text_end)
-        self.ui_scale_label.configure(bg=theme.card_bg, fg=theme.card_text_end)
+        self.theme_label.configure(
+            bg=theme.card_bg,
+            fg=theme.placard_label_fg,
+            font=theme.font_placard_label,
+        )
+        self.ui_scale_label.configure(
+            bg=theme.card_bg,
+            fg=theme.placard_label_fg,
+            font=theme.font_placard_label,
+        )
+        self.mode_card_heading.configure(
+            bg=theme.card_bg,
+            font=theme.font_placard_heading,
+            fg=theme.placard_heading_fg,
+        )
+        for widget in (
+            self.mode_card_summary,
+            self.mode_card_reliability,
+            self.mode_card_speed,
+            self.mode_card_best_use,
+        ):
+            widget.configure(font=theme.font_placard_body)
         for widget in self._card_text_widgets:
             widget.configure(bg=theme.card_bg)
+        self.randomize_button.configure(style="Primary.TButton")
         self._update_mode_card(get_mode_description(self.mode_var.get()))
 
         try:

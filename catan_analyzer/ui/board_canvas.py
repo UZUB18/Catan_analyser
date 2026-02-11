@@ -55,17 +55,30 @@ PORT_SHORT_LABELS = {
 _BOARD_VISUAL_THEMES: dict[str, dict[str, object]] = {
     "light": {
         "canvas_bg": "#F8FBFF",
+        "board_frame_outer": "#5E4225",
+        "board_frame_inner": "#A37845",
+        "board_parchment_bg": "#EBD8AF",
+        "board_parchment_stroke": "#CFAF79",
         "resource_colors": _RESOURCE_COLORS_COLOR_SAFE,
         "tile_outline": "#2F3E46",
+        "tile_outline_shadow": "#17202A",
         "selected_hex_outline": "#FFBF00",
-        "token_fill": "#FFF8E1",
-        "token_outline": "#444444",
+        "token_fill": "#FFFDF7",
+        "token_outline": "#534434",
         "token_selected_outline": "#FF8F00",
         "token_text": "#222222",
         "token_hot_text": "#C62828",
+        "token_pip": "#252525",
+        "token_badge_bg": "#1E293B",
+        "token_badge_fg": "#F8FBFF",
+        "token_shadow": "#000000",
+        "token_hover_outline": "#FFE082",
         "desert_text": "#6B4F2D",
-        "port_line": "#0072B2",
-        "port_text": "#004D78",
+        "port_line": "#2A5C8A",
+        "port_text": "#F7FBFF",
+        "port_dock_fill": "#E6D5B2",
+        "port_icon": "#123B61",
+        "port_label_bg": "#173047",
         "vertex_click_fill": "#D9EEFF",
         "vertex_click_outline": "#0072B2",
         "vertex_base_fill": "#2F3E46",
@@ -85,17 +98,30 @@ _BOARD_VISUAL_THEMES: dict[str, dict[str, object]] = {
     },
     "dark": {
         "canvas_bg": "#0F1722",
+        "board_frame_outer": "#3F2E19",
+        "board_frame_inner": "#6D5232",
+        "board_parchment_bg": "#2B343B",
+        "board_parchment_stroke": "#4A5A66",
         "resource_colors": _RESOURCE_COLORS_DARK,
         "tile_outline": "#8AA2BD",
+        "tile_outline_shadow": "#2E4358",
         "selected_hex_outline": "#FFD166",
-        "token_fill": "#1E2B3A",
+        "token_fill": "#F5EFE4",
         "token_outline": "#B6C5D6",
         "token_selected_outline": "#FFBF47",
-        "token_text": "#F0F5FA",
-        "token_hot_text": "#FF8D8D",
+        "token_text": "#1A1A1A",
+        "token_hot_text": "#C62828",
+        "token_pip": "#232323",
+        "token_badge_bg": "#0B131D",
+        "token_badge_fg": "#EAF3FF",
+        "token_shadow": "#000000",
+        "token_hover_outline": "#FFD166",
         "desert_text": "#F1D4A6",
         "port_line": "#65B8FF",
-        "port_text": "#9DD3FF",
+        "port_text": "#EAF6FF",
+        "port_dock_fill": "#1A2B3A",
+        "port_icon": "#9DD3FF",
+        "port_label_bg": "#102131",
         "vertex_click_fill": "#244660",
         "vertex_click_outline": "#9ED3FF",
         "vertex_base_fill": "#9AB1C8",
@@ -115,6 +141,10 @@ _BOARD_VISUAL_THEMES: dict[str, dict[str, object]] = {
     },
     "high_contrast": {
         "canvas_bg": "#000000",
+        "board_frame_outer": "#FFFFFF",
+        "board_frame_inner": "#FFD400",
+        "board_parchment_bg": "#111111",
+        "board_parchment_stroke": "#FFFFFF",
         "resource_colors": {
             Resource.WOOD: "#00FF9C",
             Resource.BRICK: "#FF8A00",
@@ -124,15 +154,24 @@ _BOARD_VISUAL_THEMES: dict[str, dict[str, object]] = {
             Resource.DESERT: "#B28B42",
         },
         "tile_outline": "#FFFFFF",
+        "tile_outline_shadow": "#FFD400",
         "selected_hex_outline": "#FFD400",
-        "token_fill": "#000000",
-        "token_outline": "#FFFFFF",
+        "token_fill": "#FFFFFF",
+        "token_outline": "#000000",
         "token_selected_outline": "#FFD400",
-        "token_text": "#FFFFFF",
+        "token_text": "#000000",
         "token_hot_text": "#FF4D4D",
+        "token_pip": "#000000",
+        "token_badge_bg": "#000000",
+        "token_badge_fg": "#FFFFFF",
+        "token_shadow": "#000000",
+        "token_hover_outline": "#FFD400",
         "desert_text": "#FFFFFF",
         "port_line": "#00FFFF",
-        "port_text": "#00FFFF",
+        "port_text": "#000000",
+        "port_dock_fill": "#FFFFFF",
+        "port_icon": "#000000",
+        "port_label_bg": "#00FFFF",
         "vertex_click_fill": "#FFFFFF",
         "vertex_click_outline": "#000000",
         "vertex_base_fill": "#FFFFFF",
@@ -164,8 +203,11 @@ _RESOURCE_TEXTURE_KEYWORDS = {
 # don't leave pale bands near hex edges.
 _TILE_TEXTURE_ZOOM = 1.34
 _TILE_BASE_OVERDRAW_WIDTH = 3
-_TILE_OUTLINE_WIDTH = 1.5
+_TILE_OUTLINE_WIDTH = 2.3
+_TILE_OUTLINE_SHADOW_WIDTH = 3.6
 _TEXTURE_MASK_THRESHOLD = 20
+_TOKEN_RADIUS = 22
+_TOKEN_HOVER_RADIUS = 24
 
 # ── Ring style constants ────────────────────────────────────────
 # Engine top-pick ring
@@ -248,6 +290,7 @@ class BoardCanvas(tk.Canvas):
 
         # Hover tooltip state
         self._hover_vertex_id: int | None = None
+        self._hover_token_number: int | None = None
         self._tooltip: tk.Toplevel | None = None
 
         # Score lookup (vertex_id → VertexScore) for rank snapshot
@@ -293,6 +336,8 @@ class BoardCanvas(tk.Canvas):
         self._sequence = []
         self._selected_vertex_id = None
         self._selected_hex_ids = set()
+        self._hover_vertex_id = None
+        self._hover_token_number = None
         self._clickable_vertex_ids = set(board.vertices.keys())
         self._user_picks = []
         self._compare_picks = []
@@ -300,6 +345,7 @@ class BoardCanvas(tk.Canvas):
         self._road_anchor_vertex_id = None
         self._road_hover_vertex_id = None
         self._score_lookup = {}
+        self._hide_tooltip()
         self.draw()
 
     def set_overlays(self, top_scores: Iterable[VertexScore], sequence: Iterable[DraftPick]) -> None:
@@ -407,6 +453,47 @@ class BoardCanvas(tk.Canvas):
         def to_canvas(point: tuple[float, float]) -> tuple[float, float]:
             return (point[0] * scale + offset_x, point[1] * scale + offset_y)
 
+        tile_outline_color = str(self._colors["tile_outline"])
+        tile_outline_shadow = str(self._colors.get("tile_outline_shadow", tile_outline_color))
+        hover_outline_color = str(
+            self._colors.get("token_hover_outline", self._colors.get("selected_hex_outline", "#FFD166"))
+        )
+
+        all_tile_points = [
+            to_canvas(corner)
+            for tile in self._board.tiles
+            for corner in tile.corner_points
+        ]
+        if all_tile_points:
+            min_x = min(point[0] for point in all_tile_points)
+            max_x = max(point[0] for point in all_tile_points)
+            min_y = min(point[1] for point in all_tile_points)
+            max_y = max(point[1] for point in all_tile_points)
+            frame_pad = 58
+            inset = 12
+            outer_x0 = min_x - frame_pad
+            outer_y0 = min_y - frame_pad
+            outer_x1 = max_x + frame_pad
+            outer_y1 = max_y + frame_pad
+            self.create_rectangle(
+                outer_x0,
+                outer_y0,
+                outer_x1,
+                outer_y1,
+                fill=str(self._colors.get("board_frame_outer", self._colors["canvas_bg"])),
+                outline=str(self._colors.get("board_frame_inner", self._colors["tile_outline"])),
+                width=4,
+            )
+            self.create_rectangle(
+                outer_x0 + inset,
+                outer_y0 + inset,
+                outer_x1 - inset,
+                outer_y1 - inset,
+                fill=str(self._colors.get("board_parchment_bg", self._colors["canvas_bg"])),
+                outline=str(self._colors.get("board_parchment_stroke", self._colors["tile_outline"])),
+                width=2,
+            )
+
         # ── tiles ───────────────────────────────────────────────
         for tile in self._board.tiles:
             polygon_points: list[float] = []
@@ -433,7 +520,14 @@ class BoardCanvas(tk.Canvas):
                 self.create_polygon(
                     polygon_points,
                     fill="",
-                    outline=str(self._colors["tile_outline"]),
+                    outline=tile_outline_shadow,
+                    width=_TILE_OUTLINE_SHADOW_WIDTH,
+                    joinstyle=tk.ROUND,
+                )
+                self.create_polygon(
+                    polygon_points,
+                    fill="",
+                    outline=tile_outline_color,
                     width=_TILE_OUTLINE_WIDTH,
                     joinstyle=tk.ROUND,
                 )
@@ -441,9 +535,34 @@ class BoardCanvas(tk.Canvas):
                 self.create_polygon(
                     polygon_points,
                     fill=self._resource_color(tile.resource),
-                    outline=str(self._colors["tile_outline"]),
+                    outline="",
+                    joinstyle=tk.ROUND,
+                )
+                self.create_polygon(
+                    polygon_points,
+                    fill="",
+                    outline=tile_outline_shadow,
+                    width=_TILE_OUTLINE_SHADOW_WIDTH,
+                    joinstyle=tk.ROUND,
+                )
+                self.create_polygon(
+                    polygon_points,
+                    fill="",
+                    outline=tile_outline_color,
                     width=_TILE_OUTLINE_WIDTH,
                     joinstyle=tk.ROUND,
+                )
+            if (
+                self._hover_token_number is not None
+                and tile.token_number is not None
+                and tile.token_number == self._hover_token_number
+            ):
+                self.create_polygon(
+                    polygon_points,
+                    fill="",
+                    outline=hover_outline_color,
+                    width=4,
+                    dash=(8, 3),
                 )
             if tile.id in self._selected_hex_ids:
                 self.create_polygon(
@@ -467,14 +586,33 @@ class BoardCanvas(tk.Canvas):
                     if tile.id in self._selected_hex_ids
                     else str(self._colors["token_outline"])
                 )
+                token_shadow = str(self._colors.get("token_shadow", "#000000"))
                 self.create_oval(
-                    center_x - 21,
-                    center_y - 21,
-                    center_x + 21,
-                    center_y + 21,
+                    center_x - _TOKEN_RADIUS + 2,
+                    center_y - _TOKEN_RADIUS + 3,
+                    center_x + _TOKEN_RADIUS + 2,
+                    center_y + _TOKEN_RADIUS + 3,
+                    fill=token_shadow,
+                    outline="",
+                    stipple="gray50",
+                )
+                self.create_oval(
+                    center_x - _TOKEN_RADIUS,
+                    center_y - _TOKEN_RADIUS,
+                    center_x + _TOKEN_RADIUS,
+                    center_y + _TOKEN_RADIUS,
                     fill=str(self._colors["token_fill"]),
                     outline=token_outline,
-                    width=2 if tile.id in self._selected_hex_ids else 1,
+                    width=2 if tile.id in self._selected_hex_ids else 1.5,
+                )
+                self.create_oval(
+                    center_x - _TOKEN_RADIUS + 3,
+                    center_y - _TOKEN_RADIUS + 3,
+                    center_x + _TOKEN_RADIUS - 3,
+                    center_y + _TOKEN_RADIUS - 3,
+                    fill="",
+                    outline=str(self._colors["token_outline"]),
+                    width=1,
                 )
                 token_color = (
                     str(self._colors["token_hot_text"])
@@ -483,10 +621,27 @@ class BoardCanvas(tk.Canvas):
                 )
                 self.create_text(
                     center_x,
-                    center_y,
+                    center_y - 5,
                     text=str(tile.token_number),
-                    font=("Segoe UI", 13, "bold"),
+                    font=("Segoe UI", 14, "bold"),
                     fill=token_color,
+                )
+                pip_color = (
+                    token_color
+                    if tile.token_number in (6, 8)
+                    else str(self._colors.get("token_pip", self._colors["token_text"]))
+                )
+                pip_count = pip_value(tile.token_number)
+                self._draw_token_pips(
+                    center_x=center_x,
+                    center_y=center_y + 6,
+                    pip_count=pip_count,
+                    pip_color=pip_color,
+                )
+                self._draw_probability_badge(
+                    center_x=center_x,
+                    top_y=center_y + _TOKEN_RADIUS + 6,
+                    text=f"{pip_count}/36",
                 )
 
         center_x = self.winfo_width() / 2
@@ -498,20 +653,78 @@ class BoardCanvas(tk.Canvas):
             first_point = to_canvas(self._board.vertices[first].point)
             second_point = to_canvas(self._board.vertices[second].point)
             midpoint = to_canvas(port.midpoint)
-            self.create_line(*first_point, *second_point, fill=str(self._colors["port_line"]), width=4)
+            port_line_color = str(self._colors["port_line"])
+            self.create_line(
+                *first_point,
+                *second_point,
+                fill=port_line_color,
+                width=4,
+                capstyle=tk.ROUND,
+            )
 
             dir_x = midpoint[0] - center_x
             dir_y = midpoint[1] - center_y
             magnitude = (dir_x**2 + dir_y**2) ** 0.5 or 1.0
-            label_x = midpoint[0] + (dir_x / magnitude) * 22
-            label_y = midpoint[1] + (dir_y / magnitude) * 22
-            self.create_text(
+            dir_unit_x = dir_x / magnitude
+            dir_unit_y = dir_y / magnitude
+
+            dock_x = midpoint[0] + dir_unit_x * 20
+            dock_y = midpoint[1] + dir_unit_y * 20
+            self.create_line(
+                midpoint[0],
+                midpoint[1],
+                dock_x,
+                dock_y,
+                fill=port_line_color,
+                width=3,
+                capstyle=tk.ROUND,
+            )
+            dock_radius = 12
+            self.create_oval(
+                dock_x - dock_radius,
+                dock_y - dock_radius,
+                dock_x + dock_radius,
+                dock_y + dock_radius,
+                fill=str(self._colors.get("port_dock_fill", self._colors["canvas_bg"])),
+                outline=port_line_color,
+                width=2,
+            )
+            icon_color = str(self._colors.get("port_icon", self._colors["port_line"]))
+            self.create_line(dock_x - 4, dock_y, dock_x + 4, dock_y, fill=icon_color, width=2)
+            self.create_line(dock_x, dock_y - 4, dock_x, dock_y + 4, fill=icon_color, width=2)
+            self.create_arc(
+                dock_x - 6,
+                dock_y - 6,
+                dock_x + 6,
+                dock_y + 6,
+                start=200,
+                extent=140,
+                style=tk.ARC,
+                outline=icon_color,
+                width=1.5,
+            )
+
+            label_x = dock_x + dir_unit_x * 24
+            label_y = dock_y + dir_unit_y * 24
+            label_id = self.create_text(
                 label_x,
                 label_y,
                 text=PORT_SHORT_LABELS[port.port_type],
                 font=("Segoe UI", 9, "bold"),
                 fill=str(self._colors["port_text"]),
             )
+            label_bbox = self.bbox(label_id)
+            if label_bbox is not None:
+                label_bg = self.create_rectangle(
+                    label_bbox[0] - 4,
+                    label_bbox[1] - 2,
+                    label_bbox[2] + 4,
+                    label_bbox[3] + 2,
+                    fill=str(self._colors.get("port_label_bg", self._colors["canvas_bg"])),
+                    outline=port_line_color,
+                    width=1,
+                )
+                self.tag_raise(label_id, label_bg)
 
         # ── vertex dots ─────────────────────────────────────────
         # ── user roads ───────────────────────────────────────────
@@ -729,10 +942,57 @@ class BoardCanvas(tk.Canvas):
 
     # ── hover tooltip ───────────────────────────────────────────
 
+    def _draw_token_pips(self, *, center_x: float, center_y: float, pip_count: int, pip_color: str) -> None:
+        if pip_count <= 0:
+            return
+        pip_radius = 1.7
+        spacing = 5.2
+        start_x = center_x - ((pip_count - 1) * spacing) / 2
+        for index in range(pip_count):
+            pip_x = start_x + index * spacing
+            self.create_oval(
+                pip_x - pip_radius,
+                center_y - pip_radius,
+                pip_x + pip_radius,
+                center_y + pip_radius,
+                fill=pip_color,
+                outline=pip_color,
+            )
+
+    def _draw_probability_badge(self, *, center_x: float, top_y: float, text: str) -> None:
+        badge_padding = 6
+        badge_height = 14
+        badge_width = max(26, int(round(len(text) * 6.4 + badge_padding * 2)))
+        left = center_x - (badge_width / 2)
+        right = center_x + (badge_width / 2)
+        bottom = top_y + badge_height
+        badge_bg = str(self._colors.get("token_badge_bg", "#1E293B"))
+        badge_fg = str(self._colors.get("token_badge_fg", "#F8FAFC"))
+
+        self.create_oval(left, top_y, left + badge_height, bottom, fill=badge_bg, outline=badge_bg, width=0)
+        self.create_rectangle(
+            left + badge_height / 2,
+            top_y,
+            right - badge_height / 2,
+            bottom,
+            fill=badge_bg,
+            outline=badge_bg,
+            width=0,
+        )
+        self.create_oval(right - badge_height, top_y, right, bottom, fill=badge_bg, outline=badge_bg, width=0)
+        self.create_text(
+            center_x,
+            top_y + badge_height / 2,
+            text=text,
+            font=("Segoe UI", 8, "bold"),
+            fill=badge_fg,
+        )
+
     def _handle_motion(self, event: tk.Event) -> None:
         if self._board is None:
             return
 
+        needs_redraw = False
         if self._click_mode == ClickMode.PLACE_ROADS and self._road_anchor_vertex_id is not None:
             anchor = self._road_anchor_vertex_id
             anchor_vertex = self._board.vertices.get(anchor)
@@ -745,7 +1005,16 @@ class BoardCanvas(tk.Canvas):
                 )
                 if hover_vertex != self._road_hover_vertex_id:
                     self._road_hover_vertex_id = hover_vertex
-                    self.draw()
+                    needs_redraw = True
+
+        hover_token_number = self._closest_token_number(
+            pointer_x=float(event.x),
+            pointer_y=float(event.y),
+            max_distance=_TOKEN_HOVER_RADIUS,
+        )
+        if hover_token_number != self._hover_token_number:
+            self._hover_token_number = hover_token_number
+            needs_redraw = True
 
         vertex_id = self._closest_vertex(
             click_x=float(event.x),
@@ -758,10 +1027,14 @@ class BoardCanvas(tk.Canvas):
             # Move tooltip if it exists
             if self._tooltip is not None:
                 self._position_tooltip(event)
+            if needs_redraw:
+                self.draw()
             return
 
         self._hover_vertex_id = vertex_id
         self._hide_tooltip()
+        if needs_redraw:
+            self.draw()
 
         if vertex_id is None:
             return
@@ -769,9 +1042,13 @@ class BoardCanvas(tk.Canvas):
         self._show_tooltip(vertex_id, event)
 
     def _handle_leave(self, _event: tk.Event) -> None:
+        should_redraw = self._road_hover_vertex_id is not None or self._hover_token_number is not None
         self._hover_vertex_id = None
+        self._hover_token_number = None
         self._road_hover_vertex_id = None
         self._hide_tooltip()
+        if should_redraw:
+            self.draw()
 
     def _show_tooltip(self, vertex_id: int, event: tk.Event) -> None:
         if self._board is None:
@@ -984,6 +1261,32 @@ class BoardCanvas(tk.Canvas):
         self.draw()
 
     # ── geometry helpers ────────────────────────────────────────
+
+    def _closest_token_number(
+        self,
+        *,
+        pointer_x: float,
+        pointer_y: float,
+        max_distance: float,
+    ) -> int | None:
+        if self._board is None:
+            return None
+
+        scale, offset_x, offset_y = self._layout()
+        max_distance_sq = max_distance**2
+        hovered_token_number: int | None = None
+
+        for tile in self._board.tiles:
+            if tile.token_number is None:
+                continue
+            center_x = tile.center[0] * scale + offset_x
+            center_y = tile.center[1] * scale + offset_y
+            distance_sq = (center_x - pointer_x) ** 2 + (center_y - pointer_y) ** 2
+            if distance_sq <= max_distance_sq:
+                max_distance_sq = distance_sq
+                hovered_token_number = tile.token_number
+
+        return hovered_token_number
 
     def _closest_vertex(
         self,

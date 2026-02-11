@@ -365,6 +365,26 @@ class CatanAnalyzerApp(tk.Tk):
             foreground=[("disabled", theme.muted_fg)],
         )
         self._style.configure(
+            "Primary.TButton",
+            background=theme.primary_button_bg,
+            foreground=theme.primary_button_fg,
+            font=label_font,
+            padding=(10, 5),
+            bordercolor=theme.border,
+        )
+        self._style.map(
+            "Primary.TButton",
+            background=[
+                ("active", theme.primary_button_active_bg),
+                ("pressed", theme.primary_button_active_bg),
+            ],
+            foreground=[
+                ("active", theme.primary_button_fg),
+                ("pressed", theme.primary_button_fg),
+                ("disabled", theme.muted_fg),
+            ],
+        )
+        self._style.configure(
             "TEntry",
             fieldbackground=theme.input_bg,
             foreground=theme.input_fg,
@@ -414,6 +434,7 @@ class CatanAnalyzerApp(tk.Tk):
         self._style.configure("TRadiobutton", background=theme.panel_bg, foreground=theme.panel_fg, font=label_font)
 
         self.controls.apply_theme(theme)
+        self.controls.randomize_button.configure(style="Primary.TButton")
         self.results_panel.apply_theme(theme, scale_factor=self._ui_scale_factor)
         self.board_canvas.set_visual_theme(theme.key)
         self.controls_canvas.configure(bg=theme.panel_bg)

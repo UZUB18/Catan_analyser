@@ -21,10 +21,15 @@ class UiTheme:
     button_bg: str
     button_fg: str
     button_active_bg: str
+    primary_button_bg: str
+    primary_button_fg: str
+    primary_button_active_bg: str
     card_bg: str
     card_border: str
     card_text_start: str
     card_text_end: str
+    placard_heading_fg: str
+    placard_label_fg: str
     text_bg: str
     text_fg: str
     accent_fg: str
@@ -37,6 +42,9 @@ class UiTheme:
     font_label: tuple[str, int, str]
     font_data: tuple[str, int, str]
     font_mono: tuple[str, int, str]
+    font_placard_heading: tuple[str, int, str]
+    font_placard_body: tuple[str, int, str]
+    font_placard_label: tuple[str, int, str]
 
 
 _THEMES: dict[str, UiTheme] = {
@@ -57,10 +65,15 @@ _THEMES: dict[str, UiTheme] = {
         button_bg="#E8EFF8",
         button_fg="#11243A",
         button_active_bg="#D7E5F7",
-        card_bg="#F2E7D2",
-        card_border="#BFA47A",
-        card_text_start="#B3A184",
-        card_text_end="#3A2E1B",
+        primary_button_bg="#2F7CCB",
+        primary_button_fg="#FFFFFF",
+        primary_button_active_bg="#1F67AE",
+        card_bg="#F3E6CC",
+        card_border="#B99967",
+        card_text_start="#B49E7A",
+        card_text_end="#362A19",
+        placard_heading_fg="#2F2415",
+        placard_label_fg="#4C402D",
         text_bg="#F8FBFF",
         text_fg="#18293B",
         accent_fg="#6B2DA3",
@@ -73,6 +86,9 @@ _THEMES: dict[str, UiTheme] = {
         font_label=("Segoe UI", 10, "normal"),
         font_data=("Segoe UI", 10, "normal"),
         font_mono=("Consolas", 10, "normal"),
+        font_placard_heading=("Georgia", 12, "bold"),
+        font_placard_body=("Segoe UI", 10, "normal"),
+        font_placard_label=("Segoe UI", 9, "bold"),
     ),
     "dark": UiTheme(
         key="dark",
@@ -91,10 +107,15 @@ _THEMES: dict[str, UiTheme] = {
         button_bg="#27394D",
         button_fg="#EAF3FF",
         button_active_bg="#33516F",
-        card_bg="#2C3B4D",
-        card_border="#4E627A",
-        card_text_start="#8FA7BF",
+        primary_button_bg="#3C82F6",
+        primary_button_fg="#F8FCFF",
+        primary_button_active_bg="#2D72E4",
+        card_bg="#2C3943",
+        card_border="#5D7389",
+        card_text_start="#8EA4BB",
         card_text_end="#F0F6FF",
+        placard_heading_fg="#F8FBFF",
+        placard_label_fg="#C7D5E4",
         text_bg="#101A26",
         text_fg="#EAF3FF",
         accent_fg="#C999FF",
@@ -107,6 +128,9 @@ _THEMES: dict[str, UiTheme] = {
         font_label=("Segoe UI", 10, "normal"),
         font_data=("Segoe UI", 10, "normal"),
         font_mono=("Consolas", 10, "normal"),
+        font_placard_heading=("Georgia", 12, "bold"),
+        font_placard_body=("Segoe UI", 10, "normal"),
+        font_placard_label=("Segoe UI", 9, "bold"),
     ),
     "high_contrast": UiTheme(
         key="high_contrast",
@@ -125,10 +149,15 @@ _THEMES: dict[str, UiTheme] = {
         button_bg="#000000",
         button_fg="#FFFFFF",
         button_active_bg="#1A1A1A",
+        primary_button_bg="#FFD400",
+        primary_button_fg="#000000",
+        primary_button_active_bg="#FFE266",
         card_bg="#000000",
         card_border="#FFFFFF",
         card_text_start="#B8B8B8",
         card_text_end="#FFFFFF",
+        placard_heading_fg="#FFFFFF",
+        placard_label_fg="#FFFFFF",
         text_bg="#000000",
         text_fg="#FFFFFF",
         accent_fg="#00FFFF",
@@ -141,6 +170,9 @@ _THEMES: dict[str, UiTheme] = {
         font_label=("Segoe UI", 11, "normal"),
         font_data=("Segoe UI", 11, "normal"),
         font_mono=("Consolas", 11, "normal"),
+        font_placard_heading=("Georgia", 13, "bold"),
+        font_placard_body=("Segoe UI", 11, "normal"),
+        font_placard_label=("Segoe UI", 11, "bold"),
     ),
 }
 
@@ -152,4 +184,3 @@ def get_theme(theme_key: str) -> UiTheme:
 
 def available_themes() -> list[str]:
     return list(_THEMES.keys())
-
