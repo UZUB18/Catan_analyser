@@ -1,10 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "catan-analyzer"
 version = "0.1.0"
 description = "Simple Catan opening settlement analyzer with Tkinter UI."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "networkx",
+    "click",
+    "rich",
+]
+
+[project.scripts]
+catanatron-play = "catanatron.cli.play:simulate"
+catanatron = "catanatron.cli.play:simulate"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["catan_analyzer*", "catanatron*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

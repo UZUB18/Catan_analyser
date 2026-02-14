@@ -7,6 +7,16 @@ Catan opening analyzer for 2-4 players with randomized base-game boards.
 python main.py
 ```
 
+## Catanatron integration
+- The project now vendors a local `catanatron/` package (core + players + CLI).
+- A dedicated **Open Catanatron CLI** button/menu item is available in the Tkinter app.
+- You can also run the CLI directly:
+```bash
+python -m catanatron.cli.play --help-players
+catanatron-play --players=R,R,R,R --num=20
+catanatron --players=R,R,R,R --num=20
+```
+
 ## Test
 ```bash
 python -m unittest discover -s tests -v

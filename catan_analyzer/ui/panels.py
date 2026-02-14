@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from catan_analyzer.analysis.types import AnalysisConfig, AnalysisMode, AnalysisResult, RobberPolicy
 from catan_analyzer.ui.explainability import compute_sensitivity_badges, explain_vertex_score
@@ -844,6 +844,339 @@ class AnalyzerControls(ttk.LabelFrame):
         green = int(round(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio))
         blue = int(round(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))
         return f"#{red:02X}{green:02X}{blue:02X}"
+
+
+class EngineLabPanel(ttk.LabelFrame):
+    POLICY_OPTIONS = (
+        "first_legal",
+        "random",
+        "weighted_random",
+        "greedy_vp",
+    )
+
+    GYM_REPRESENTATIONS = (
+        "mixed",
+        "tensor",
+        "custom",
+    )
+
+    def __init__(
+        self,
+        master: tk.Widget,
+        *,
+        on_reset: Optional[Callable[[], None]] = None,
+        on_play_tick: Optional[Callable[[], None]] = None,
+        on_run_ticks: Optional[Callable[[], None]] = None,
+        on_run_to_end: Optional[Callable[[], None]] = None,
+        on_apply_selected_action: Optional[Callable[[], None]] = None,
+        on_refresh_actions: Optional[Callable[[], None]] = None,
+        on_export_gym_snapshot: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(master, text="Engine Lab", padding=10)
+        self._on_reset = on_reset
+        self._on_play_tick = on_play_tick
+        self._on_run_ticks = on_run_ticks
+        self._on_run_to_end = on_run_to_end
+        self._on_apply_selected_action = on_apply_selected_action
+        self._on_refresh_actions = on_refresh_actions
+        self._on_export_gym_snapshot = on_export_gym_snapshot
+
+        self.player_count_var = tk.IntVar(value=4)
+        self.turn_limit_var = tk.IntVar(value=240)
+        self.max_ticks_var = tk.IntVar(value=60)
+        self.seed_var = tk.StringVar(value="")
+        self.gym_representation_var = tk.StringVar(value="mixed")
+        self.gym_use_action_mask_var = tk.BooleanVar(value=True)
+        self.summary_var = tk.StringVar(value="No engine state yet. Click Reset Engine.")
+        self.status_var = tk.StringVar(value="Engine menu ready.")
+
+        self.policy_vars: dict[int, tk.StringVar] = {
+            1: tk.StringVar(value="greedy_vp"),
+            2: tk.StringVar(value="weighted_random"),
+            3: tk.StringVar(value="weighted_random"),
+            4: tk.StringVar(value="weighted_random"),
+        }
+        self.policy_combos: dict[int, ttk.Combobox] = {}
+        self._action_labels: list[str] = []
+        self._build()
+
+    def _build(self) -> None:
+        setup_frame = ttk.LabelFrame(self, text="Standalone Engine Menu", padding=8)
+        setup_frame.grid(row=0, column=0, sticky="ew")
+        setup_frame.columnconfigure(1, weight=1)
+        setup_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(setup_frame, text="Players").grid(row=0, column=0, sticky="w")
+        player_combo = ttk.Combobox(
+            setup_frame,
+            values=[2, 3, 4],
+            textvariable=self.player_count_var,
+            state="readonly",
+            width=8,
+        )
+        player_combo.grid(row=0, column=1, sticky="ew", padx=(8, 12))
+        player_combo.bind("<<ComboboxSelected>>", self._on_player_count_change)
+
+        ttk.Label(setup_frame, text="Seed (optional)").grid(row=0, column=2, sticky="w")
+        ttk.Entry(setup_frame, textvariable=self.seed_var, width=14).grid(
+            row=0,
+            column=3,
+            sticky="ew",
+            padx=(8, 0),
+        )
+
+        ttk.Label(setup_frame, text="Turn limit").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(setup_frame, textvariable=self.turn_limit_var, width=10).grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(8, 12),
+            pady=(6, 0),
+        )
+
+        ttk.Label(setup_frame, text="Run N ticks").grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(setup_frame, textvariable=self.max_ticks_var, width=10).grid(
+            row=1,
+            column=3,
+            sticky="ew",
+            padx=(8, 0),
+            pady=(6, 0),
+        )
+
+        policy_frame = ttk.LabelFrame(self, text="Player Policies", padding=8)
+        policy_frame.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        policy_frame.columnconfigure(1, weight=1)
+
+        for player_id in range(1, 5):
+            ttk.Label(policy_frame, text=f"Player {player_id}").grid(
+                row=player_id - 1,
+                column=0,
+                sticky="w",
+                pady=(2 if player_id > 1 else 0, 0),
+            )
+            combo = ttk.Combobox(
+                policy_frame,
+                values=list(self.POLICY_OPTIONS),
+                textvariable=self.policy_vars[player_id],
+                state="readonly",
+                width=20,
+            )
+            combo.grid(
+                row=player_id - 1,
+                column=1,
+                sticky="ew",
+                padx=(8, 0),
+                pady=(2 if player_id > 1 else 0, 0),
+            )
+            self.policy_combos[player_id] = combo
+
+        controls_row = ttk.Frame(self)
+        controls_row.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        for index in range(5):
+            controls_row.columnconfigure(index, weight=1)
+
+        self.reset_button = ttk.Button(controls_row, text="Reset Engine", command=self._handle_reset)
+        self.reset_button.grid(row=0, column=0, sticky="ew")
+
+        self.tick_button = ttk.Button(controls_row, text="Play Tick", command=self._handle_tick)
+        self.tick_button.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        self.run_ticks_button = ttk.Button(controls_row, text="Run N", command=self._handle_run_ticks)
+        self.run_ticks_button.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        self.run_to_end_button = ttk.Button(controls_row, text="Run to End", command=self._handle_run_to_end)
+        self.run_to_end_button.grid(row=0, column=3, sticky="ew", padx=(8, 0))
+
+        self.refresh_button = ttk.Button(controls_row, text="Refresh", command=self._handle_refresh)
+        self.refresh_button.grid(row=0, column=4, sticky="ew", padx=(8, 0))
+
+        actions_frame = ttk.LabelFrame(self, text="Legal Actions", padding=8)
+        actions_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        actions_frame.columnconfigure(0, weight=1)
+        actions_frame.rowconfigure(0, weight=1)
+
+        self.legal_actions_listbox = tk.Listbox(actions_frame, height=10, exportselection=False)
+        self.legal_actions_listbox.grid(row=0, column=0, sticky="nsew")
+        legal_scroll = ttk.Scrollbar(actions_frame, orient="vertical", command=self.legal_actions_listbox.yview)
+        legal_scroll.grid(row=0, column=1, sticky="ns")
+        self.legal_actions_listbox.configure(yscrollcommand=legal_scroll.set)
+
+        self.apply_action_button = ttk.Button(
+            actions_frame,
+            text="Apply Selected Action",
+            command=self._handle_apply_selected_action,
+        )
+        self.apply_action_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+        gym_frame = ttk.LabelFrame(self, text="Gym Bridge (for RL workflows)", padding=8)
+        gym_frame.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        gym_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(gym_frame, text="Observation style").grid(row=0, column=0, sticky="w")
+        gym_combo = ttk.Combobox(
+            gym_frame,
+            values=list(self.GYM_REPRESENTATIONS),
+            textvariable=self.gym_representation_var,
+            state="readonly",
+            width=16,
+        )
+        gym_combo.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ttk.Checkbutton(
+            gym_frame,
+            text="Include valid-action mask",
+            variable=self.gym_use_action_mask_var,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Button(
+            gym_frame,
+            text="Export Gym-style Snapshot",
+            command=self._handle_export_gym_snapshot,
+        ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Label(
+            gym_frame,
+            text=(
+                "Reference: catanatron Gym docs mention valid actions in info['valid_actions'].\n"
+                "This panel keeps a compatible snapshot so RL features can be added later."
+            ),
+            wraplength=420,
+            justify="left",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        self.summary_label = ttk.Label(self, textvariable=self.summary_var, wraplength=430, justify="left")
+        self.summary_label.grid(row=5, column=0, sticky="w", pady=(8, 0))
+        self.status_label = ttk.Label(self, textvariable=self.status_var, wraplength=430, justify="left")
+        self.status_label.grid(row=6, column=0, sticky="w", pady=(4, 0))
+
+        log_frame = ttk.LabelFrame(self, text="Engine Log", padding=8)
+        log_frame.grid(row=7, column=0, sticky="nsew", pady=(8, 0))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(log_frame, height=10, wrap="word", state="disabled")
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        log_scroll.grid(row=0, column=1, sticky="ns")
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(7, weight=1)
+        self._sync_policy_visibility()
+
+    def get_engine_settings(self) -> dict[str, object]:
+        player_count = max(2, min(4, int(self.player_count_var.get())))
+        turn_limit = max(20, int(self.turn_limit_var.get()))
+        max_ticks = max(1, int(self.max_ticks_var.get()))
+        raw_seed = str(self.seed_var.get()).strip()
+        seed_value: int | None
+        if raw_seed == "":
+            seed_value = None
+        else:
+            try:
+                seed_value = int(raw_seed)
+            except ValueError:
+                seed_value = None
+
+        policies = {
+            player_id: self.policy_vars[player_id].get()
+            for player_id in range(1, player_count + 1)
+        }
+        return {
+            "player_count": player_count,
+            "turn_limit": turn_limit,
+            "max_ticks": max_ticks,
+            "seed": seed_value,
+            "policies": policies,
+            "gym_representation": str(self.gym_representation_var.get()),
+            "gym_use_action_mask": bool(self.gym_use_action_mask_var.get()),
+        }
+
+    def set_legal_actions(self, action_labels: Sequence[str]) -> None:
+        self._action_labels = list(action_labels)
+        self.legal_actions_listbox.delete(0, tk.END)
+        if not self._action_labels:
+            self.legal_actions_listbox.insert(tk.END, "(no legal actions)")
+            return
+        for label in self._action_labels:
+            self.legal_actions_listbox.insert(tk.END, label)
+
+    def get_selected_action_index(self) -> int | None:
+        selection = self.legal_actions_listbox.curselection()
+        if not selection:
+            return None
+        index = int(selection[0])
+        if index < 0 or index >= len(self._action_labels):
+            return None
+        return index
+
+    def set_summary(self, text: str) -> None:
+        self.summary_var.set(text)
+
+    def set_status(self, text: str) -> None:
+        self.status_var.set(text)
+
+    def append_log(self, text: str) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.insert(tk.END, f"{text}\n")
+        self.log_text.see(tk.END)
+        self.log_text.configure(state="disabled")
+
+    def clear_log(self) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state="disabled")
+
+    def apply_theme(self, theme: UiTheme) -> None:
+        self.log_text.configure(
+            bg=theme.text_bg,
+            fg=theme.text_fg,
+            insertbackground=theme.text_fg,
+            selectbackground=theme.selection_bg,
+            selectforeground=theme.selection_fg,
+            font=theme.font_data,
+        )
+        self.legal_actions_listbox.configure(
+            bg=theme.text_bg,
+            fg=theme.text_fg,
+            selectbackground=theme.selection_bg,
+            selectforeground=theme.selection_fg,
+            highlightbackground=theme.border,
+            highlightcolor=theme.border,
+        )
+
+    def _on_player_count_change(self, _event: tk.Event) -> None:
+        self._sync_policy_visibility()
+
+    def _sync_policy_visibility(self) -> None:
+        player_count = max(2, min(4, int(self.player_count_var.get())))
+        for player_id, combo in self.policy_combos.items():
+            state = "readonly" if player_id <= player_count else "disabled"
+            combo.configure(state=state)
+
+    def _handle_reset(self) -> None:
+        if self._on_reset:
+            self._on_reset()
+
+    def _handle_tick(self) -> None:
+        if self._on_play_tick:
+            self._on_play_tick()
+
+    def _handle_run_ticks(self) -> None:
+        if self._on_run_ticks:
+            self._on_run_ticks()
+
+    def _handle_run_to_end(self) -> None:
+        if self._on_run_to_end:
+            self._on_run_to_end()
+
+    def _handle_apply_selected_action(self) -> None:
+        if self._on_apply_selected_action:
+            self._on_apply_selected_action()
+
+    def _handle_refresh(self) -> None:
+        if self._on_refresh_actions:
+            self._on_refresh_actions()
+
+    def _handle_export_gym_snapshot(self) -> None:
+        if self._on_export_gym_snapshot:
+            self._on_export_gym_snapshot()
 
 
 class ResultsPanel(ttk.LabelFrame):

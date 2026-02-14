@@ -3,7 +3,12 @@ from __future__ import annotations
 import queue
 import threading
 import time
+import json
+import os
+import subprocess
+import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from catan_analyzer.analysis.knowledge_test import (
@@ -17,8 +22,17 @@ from catan_analyzer.analysis.types import VertexScore
 from catan_analyzer.domain.board import EdgeKey, Resource
 from catan_analyzer.domain.randomizer import generate_randomized_board
 from catan_analyzer.ui.board_canvas import BoardCanvas, ClickMode, PORT_SHORT_LABELS
-from catan_analyzer.ui.panels import AnalyzerControls, ResultsPanel
+from catan_analyzer.ui.panels import AnalyzerControls, EngineLabPanel, ResultsPanel
 from catan_analyzer.ui.themes import UiTheme, get_theme
+from catan_analyzer.game import (
+    FirstLegalPolicy,
+    GameAction,
+    GameEngine,
+    GreedyVisibleVpPolicy,
+    RandomPolicy,
+    WeightedRandomPolicy,
+    initialize_game_state,
+)
 
 
 class CatanAnalyzerApp(tk.Tk):
@@ -41,17 +55,30 @@ class CatanAnalyzerApp(tk.Tk):
         self._analysis_started_at = 0.0
         self._last_ranking: list[VertexScore] = []
         self._user_roads: set[EdgeKey] = set()
+        self._engine: GameEngine | None = None
+        self._engine_action_cache: list[GameAction] = []
+        self._engine_tick_counter = 0
         self._theme: UiTheme = get_theme("light")
         self._style = ttk.Style(self)
         self._results_focus_mode = False
         self._saved_sash_pos: int | None = None
         self._ui_scale_factor = 1.0
+        self._project_root = Path(__file__).resolve().parents[1]
 
+        self._build_menu_bar()
         self._build_layout()
         self.board_canvas.set_board(self.board)
         self.apply_theme(self._theme.key)
         self._refresh_knowledge_test_ui()
+        self._refresh_engine_menu(status="Engine menu ready. Reset to start a controllable match.")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _build_menu_bar(self) -> None:
+        self.menu_bar = tk.Menu(self)
+        catanatron_menu = tk.Menu(self.menu_bar, tearoff=False)
+        catanatron_menu.add_command(label="Open Catanatron CLI", command=self.on_open_catanatron_cli)
+        self.menu_bar.add_cascade(label="Catanatron", menu=catanatron_menu)
+        self.configure(menu=self.menu_bar)
 
     def _build_layout(self) -> None:
         container = ttk.Frame(self, padding=10)
@@ -92,6 +119,12 @@ class CatanAnalyzerApp(tk.Tk):
         self.compare_status_label.pack(
             side="left", padx=(10, 0)
         )
+        self.catanatron_cli_button = ttk.Button(
+            toolbar,
+            text="Open Catanatron CLI",
+            command=self.on_open_catanatron_cli,
+        )
+        self.catanatron_cli_button.pack(side="right")
 
         # ── Board canvas ────────────────────────────────────────
         self.board_canvas = BoardCanvas(
@@ -115,8 +148,10 @@ class CatanAnalyzerApp(tk.Tk):
         self.right_notebook.pack(fill="both", expand=True)
 
         self.controls_tab = ttk.Frame(self.right_notebook)
+        self.engines_tab = ttk.Frame(self.right_notebook)
         self.results_tab = ttk.Frame(self.right_notebook)
         self.right_notebook.add(self.controls_tab, text="Controls")
+        self.right_notebook.add(self.engines_tab, text="Engines")
         self.right_notebook.add(self.results_tab, text="Results")
 
         controls_scroll_container = ttk.Frame(self.controls_tab)
@@ -155,6 +190,18 @@ class CatanAnalyzerApp(tk.Tk):
             on_scroll_request=self._forward_controls_scroll_event,
         )
         self.controls.pack(fill="x")
+
+        self.engine_panel = EngineLabPanel(
+            self.engines_tab,
+            on_reset=self.on_engine_reset,
+            on_play_tick=self.on_engine_play_tick,
+            on_run_ticks=self.on_engine_run_ticks,
+            on_run_to_end=self.on_engine_run_to_end,
+            on_apply_selected_action=self.on_engine_apply_selected_action,
+            on_refresh_actions=self.on_engine_refresh_actions,
+            on_export_gym_snapshot=self.on_engine_export_gym_snapshot,
+        )
+        self.engine_panel.pack(fill="both", expand=True)
 
         self.results_panel = ResultsPanel(
             self.results_tab,
@@ -435,6 +482,7 @@ class CatanAnalyzerApp(tk.Tk):
 
         self.controls.apply_theme(theme)
         self.controls.randomize_button.configure(style="Primary.TButton")
+        self.engine_panel.apply_theme(theme)
         self.results_panel.apply_theme(theme, scale_factor=self._ui_scale_factor)
         self.board_canvas.set_visual_theme(theme.key)
         self.controls_canvas.configure(bg=theme.panel_bg)
@@ -462,6 +510,12 @@ class CatanAnalyzerApp(tk.Tk):
         self.board_canvas.set_user_picks(self._knowledge_test_picks)
         self.board_canvas.set_user_roads(self._user_roads)
         self.results_panel.clear()
+        self._engine = None
+        self._engine_action_cache = []
+        self._engine_tick_counter = 0
+        self._refresh_engine_menu(
+            status="Board randomized. Reset the engine menu to start a new controlled match."
+        )
         self._refresh_knowledge_test_ui()
         self.controls.set_status("Board randomized.")
         self.controls.reset_progress()
@@ -745,10 +799,265 @@ class CatanAnalyzerApp(tk.Tk):
             f"Avg rank of your picks: {avg_rank}."
         )
 
+    # â”€â”€ standalone engine menu callbacks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    def on_engine_reset(self) -> None:
+        settings = self.engine_panel.get_engine_settings()
+        player_count = int(settings["player_count"])
+        seed = settings["seed"]
+        turn_limit = int(settings["turn_limit"])
+        policies_raw = settings["policies"]
+        policies: dict[int, object] = {}
+        seed_base = int(seed) if isinstance(seed, int) else int(time.time() * 1000)
+        if isinstance(policies_raw, dict):
+            for player_id in range(1, player_count + 1):
+                policy_name = str(policies_raw.get(player_id, "first_legal"))
+                policies[player_id] = self._policy_from_name(policy_name, seed_base=seed_base, player_id=player_id)
+
+        state = initialize_game_state(self.board, player_count=player_count, seed=seed if isinstance(seed, int) else None)
+        self._engine = GameEngine(state, policies=policies, turn_limit=turn_limit)
+        self._engine_action_cache = []
+        self._engine_tick_counter = 0
+        self.engine_panel.clear_log()
+        self.engine_panel.append_log(
+            f"Engine reset: players={player_count}, turn_limit={turn_limit}, seed={seed if seed is not None else 'auto'}"
+        )
+        self._refresh_engine_menu(status="Engine state initialized from the current board.")
+        self.right_notebook.select(self.engines_tab)
+
+    def on_engine_play_tick(self) -> None:
+        if self._engine is None:
+            self.on_engine_reset()
+            return
+        if self._engine.is_finished():
+            self._refresh_engine_menu(status="Engine is already finished.")
+            return
+        before = self._engine.state
+        action = self._engine.play_tick()
+        if action is None:
+            self._refresh_engine_menu(status="No action was executed.")
+            return
+        self._engine_tick_counter += 1
+        event_tail = self._engine.state.event_log[-1] if self._engine.state.event_log else "(no event)"
+        self.engine_panel.append_log(
+            f"[{self._engine_tick_counter:03d}] T{before.turn_number} P{before.current_player_id} -> "
+            f"{self._format_game_action(action)} | {event_tail}"
+        )
+        self._refresh_engine_menu(status="Played one policy-driven tick.")
+
+    def on_engine_run_ticks(self) -> None:
+        if self._engine is None:
+            self.on_engine_reset()
+            return
+        settings = self.engine_panel.get_engine_settings()
+        tick_budget = max(1, int(settings["max_ticks"]))
+        executed = 0
+        for _ in range(tick_budget):
+            if self._engine is None or self._engine.is_finished():
+                break
+            before = self._engine.state
+            action = self._engine.play_tick()
+            if action is None:
+                break
+            executed += 1
+            self._engine_tick_counter += 1
+            if executed <= 20 or executed == tick_budget:
+                self.engine_panel.append_log(
+                    f"[{self._engine_tick_counter:03d}] T{before.turn_number} P{before.current_player_id} -> "
+                    f"{self._format_game_action(action)}"
+                )
+        self._refresh_engine_menu(status=f"Executed {executed} tick(s).")
+
+    def on_engine_run_to_end(self) -> None:
+        if self._engine is None:
+            self.on_engine_reset()
+            return
+        max_ticks = max(40, int(self._engine.turn_limit) * 16)
+        executed = 0
+        for _ in range(max_ticks):
+            if self._engine.is_finished():
+                break
+            action = self._engine.play_tick()
+            if action is None:
+                break
+            executed += 1
+            self._engine_tick_counter += 1
+        winner = self._engine.winning_player_id
+        if winner is None:
+            status = f"Run-to-end stopped after {executed} tick(s) without winner."
+        else:
+            status = f"Run-to-end complete after {executed} tick(s). Winner: P{winner}."
+        self.engine_panel.append_log(status)
+        self._refresh_engine_menu(status=status)
+
+    def on_engine_apply_selected_action(self) -> None:
+        if self._engine is None:
+            self._refresh_engine_menu(status="Reset the engine before applying actions.")
+            return
+        action_index = self.engine_panel.get_selected_action_index()
+        if action_index is None:
+            self._refresh_engine_menu(status="Select a legal action first.")
+            return
+        if action_index >= len(self._engine_action_cache):
+            self._refresh_engine_menu(status="Selected action is no longer available; refresh and try again.")
+            return
+
+        action = self._engine_action_cache[action_index]
+        before = self._engine.state
+        try:
+            self._engine.execute(action, validate_action=True)
+        except Exception as exc:
+            self._refresh_engine_menu(status=f"Action failed: {exc}")
+            return
+        self._engine_tick_counter += 1
+        self.engine_panel.append_log(
+            f"[{self._engine_tick_counter:03d}] MANUAL T{before.turn_number} P{before.current_player_id} -> "
+            f"{self._format_game_action(action)}"
+        )
+        self._refresh_engine_menu(status="Applied selected legal action.")
+
+    def on_engine_refresh_actions(self) -> None:
+        self._refresh_engine_menu(status="Engine menu refreshed.")
+
+    def on_engine_export_gym_snapshot(self) -> None:
+        if self._engine is None:
+            self._refresh_engine_menu(status="Reset the engine before exporting gym snapshots.")
+            return
+        settings = self.engine_panel.get_engine_settings()
+        legal_actions = self._engine.legal_actions
+        self._engine_action_cache = legal_actions
+
+        snapshot = {
+            "representation": settings["gym_representation"],
+            "phase": self._engine.state.phase.value,
+            "turn_number": self._engine.state.turn_number,
+            "current_player_id": self._engine.state.current_player_id,
+            "robber_tile_id": self._engine.state.robber_tile_id,
+            "valid_actions": [
+                {
+                    "index": index,
+                    "kind": action.kind,
+                    "data": self._serialize_action_value(action.data),
+                }
+                for index, action in enumerate(legal_actions)
+            ],
+            "valid_action_indices": list(range(len(legal_actions))),
+        }
+        if bool(settings["gym_use_action_mask"]):
+            snapshot["action_mask"] = [1 for _ in legal_actions]
+        snapshot["notes"] = (
+            "Gym bridge snapshot inspired by catanatron docs where valid actions are exposed via info['valid_actions']."
+        )
+        self.engine_panel.append_log(json.dumps(snapshot, indent=2))
+        self._refresh_engine_menu(status="Exported Gym-style snapshot to Engine Log.")
+
+    def _refresh_engine_menu(self, *, status: str) -> None:
+        if self._engine is None:
+            self.engine_panel.set_legal_actions([])
+            self.engine_panel.set_summary("No engine state yet. Click Reset Engine.")
+            self.engine_panel.set_status(status)
+            return
+
+        state = self._engine.state
+        legal_actions = self._engine.legal_actions
+        self._engine_action_cache = list(legal_actions)
+        self.engine_panel.set_legal_actions(
+            [self._format_game_action(action) for action in legal_actions]
+        )
+        winner = self._engine.winning_player_id
+        summary = (
+            f"Turn {state.turn_number} â€¢ Phase {state.phase.value} â€¢ Current P{state.current_player_id} "
+            f"â€¢ Legal actions {len(legal_actions)}"
+        )
+        if winner is not None:
+            summary = f"{summary} â€¢ Winner P{winner}"
+        self.engine_panel.set_summary(summary)
+        self.engine_panel.set_status(status)
+
+    def _policy_from_name(self, name: str, *, seed_base: int, player_id: int):
+        normalized = str(name).strip().lower()
+        seeded_value = seed_base + (player_id * 104_729)
+        if normalized == "random":
+            return RandomPolicy(seed=seeded_value)
+        if normalized == "weighted_random":
+            return WeightedRandomPolicy(seed=seeded_value)
+        if normalized == "greedy_vp":
+            return GreedyVisibleVpPolicy()
+        return FirstLegalPolicy()
+
+    def _format_game_action(self, action: GameAction) -> str:
+        payload = self._serialize_action_value(action.data)
+        if isinstance(payload, dict) and payload:
+            parts = ", ".join(f"{key}={value}" for key, value in payload.items())
+            return f"{action.kind}({parts})"
+        return action.kind
+
+    def _serialize_action_value(self, value):
+        if isinstance(value, dict):
+            return {
+                str(self._serialize_action_value(key)): self._serialize_action_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [self._serialize_action_value(item) for item in value]
+        if hasattr(value, "value"):
+            return str(value.value)
+        return value
+
     def _on_close(self) -> None:
         if self._analysis_cancel_event is not None:
             self._analysis_cancel_event.set()
         self.destroy()
+
+    def on_open_catanatron_cli(self) -> None:
+        python_executable = sys.executable.replace("'", "''")
+        cwd = str(self._project_root).replace("'", "''")
+        existing_pythonpath = os.environ.get("PYTHONPATH", "").replace("'", "''")
+        powershell_command = (
+            f"$repoPath = '{cwd}'; "
+            f"$py = '{python_executable}'; "
+            f"$existingPyPath = '{existing_pythonpath}'; "
+            f"Set-Location -LiteralPath '{cwd}'; "
+            "if ([string]::IsNullOrWhiteSpace($existingPyPath)) { "
+            "  $env:PYTHONPATH = $repoPath "
+            "} else { "
+            "  $env:PYTHONPATH = \"$repoPath;$existingPyPath\" "
+            "} "
+            "function catanatron { "
+            "  param([Parameter(ValueFromRemainingArguments=$true)][string[]]$args) "
+            "  & $py -m catanatron.cli.play @args "
+            "}; "
+            "function catanatron-play { "
+            "  param([Parameter(ValueFromRemainingArguments=$true)][string[]]$args) "
+            "  & $py -m catanatron.cli.play @args "
+            "}; "
+            "Write-Host 'Catanatron CLI ready (using local catan_analyst_v2 code).' -ForegroundColor Cyan; "
+            "& $py -m catanatron.cli.play --help-players; "
+            "Write-Host ''; "
+            "Write-Host 'Try commands:' -ForegroundColor Yellow; "
+            "Write-Host '  catanatron --players=GT,STAT,WILD,R --num=20 --parallel' -ForegroundColor Yellow; "
+            "Write-Host '  catanatron --players=GT,W,VP,R --num=20' -ForegroundColor Yellow; "
+            "Write-Host '  catanatron --code=path\\\\to\\\\more_engines.py --players=NEW,GT,R,R --num=20' -ForegroundColor Yellow"
+        )
+
+        try:
+            creation_flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+            subprocess.Popen(
+                [
+                    "powershell",
+                    "-NoLogo",
+                    "-NoExit",
+                    "-Command",
+                    powershell_command,
+                ],
+                cwd=cwd,
+                creationflags=creation_flags,
+            )
+        except Exception as exc:
+            messagebox.showerror("Catanatron CLI", f"Failed to open Catanatron CLI terminal:\n{exc}")
+            self.controls.set_status("Failed to launch Catanatron CLI.")
+            return
+
+        self.controls.set_status("Opened Catanatron CLI in a new terminal window.")
 
 
 def run_app() -> None:
