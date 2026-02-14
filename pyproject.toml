@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 catanatron-play = "catanatron.cli.play:simulate"
 catanatron = "catanatron.cli.play:simulate"
+catanatron-benchmark = "catanatron.cli.benchmark_engines:benchmark_engines"
 
 [tool.setuptools.packages.find]
 where = ["."]
