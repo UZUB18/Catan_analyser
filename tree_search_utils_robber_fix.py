@@ -38,19 +38,9 @@ DETERMINISTIC_ACTIONS = set(
 
 
 def execute_deterministic(game, action):
-    option_game = game.copy()
-    try:
-        option_game.execute(action, validate_action=False)
-        return [(option_game, 1)]
-    except Exception:
-        # Defensive flattening: search may occasionally construct a branch where
-        # execution fails due internal cache/component edge-cases (rare, but can
-        # crash long parallel benchmarks). Keep search alive by returning the
-        # pre-action state as a neutral fallback outcome.
-        #
-        # This matches the robustness pattern already used for stochastic
-        # expansions (BUY_DEVELOPMENT_CARD / MOVE_ROBBER).
-        return [(game.copy(), 1)]
+    copy = game.copy()
+    copy.execute(action, validate_action=False)
+    return [(copy, 1)]
 
 
 def execute_spectrum(game: Game, action: Action):
@@ -88,11 +78,7 @@ def execute_spectrum(game: Game, action: Action):
 
             option_action = Action(action.color, action.action_type, outcome)
             option_game = game.copy()
-            try:
-                option_game.execute(option_action, validate_action=False)
-            except Exception:
-                # Defensive flattening (see execute_deterministic comment).
-                option_game = game.copy()
+            option_game.execute(option_action, validate_action=False)
             results.append((option_game, number_probability(roll)))
         return results
     elif action.action_type == ActionType.MOVE_ROBBER:
@@ -107,7 +93,9 @@ def execute_spectrum(game: Game, action: Action):
             # Nothing to steal
             return execute_deterministic(game, action)
 
+
         for i, card in enumerate(RESOURCES):
+            # Probability of stealing 'card' is proportional to its frequency in victim hand.
             try:
                 count = int(opponent_hand[i])
             except Exception:
@@ -116,6 +104,7 @@ def execute_spectrum(game: Game, action: Action):
                 continue
 
             prob = count / float(opponent_hand_size)
+
             option_action = Action(
                 action.color,
                 action.action_type,
@@ -139,9 +128,11 @@ def execute_spectrum(game: Game, action: Action):
         if not results:
             return execute_deterministic(game, action)
 
-        total = sum(p for _g, p in results)
-        if total > 0 and abs(total - 1.0) > 1e-6:
-            results = [(g, p / total) for g, p in results]
+        # Normalize (defensive).
+        s = sum(p for _g, p in results)
+        if s > 0 and abs(s - 1.0) > 1e-6:
+            results = [(g, p / s) for g, p in results]
+        return results
         return results
     else:
         raise RuntimeError("Unknown ActionType " + str(action.action_type))
