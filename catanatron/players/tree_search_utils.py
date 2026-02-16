@@ -93,7 +93,15 @@ def execute_spectrum(game: Game, action: Action):
             # Nothing to steal
             return execute_deterministic(game, action)
 
-        for card in RESOURCES:
+        for i, card in enumerate(RESOURCES):
+            try:
+                count = int(opponent_hand[i])
+            except Exception:
+                count = 0
+            if count <= 0:
+                continue
+
+            prob = count / float(opponent_hand_size)
             option_action = Action(
                 action.color,
                 action.action_type,
@@ -112,7 +120,14 @@ def execute_spectrum(game: Game, action: Action):
                 # ignoring means the value function of this node will be flattened,
                 # to the one before.
                 pass
-            results.append((option_game, 1 / 5.0))
+            results.append((option_game, prob))
+
+        if not results:
+            return execute_deterministic(game, action)
+
+        total = sum(p for _g, p in results)
+        if total > 0 and abs(total - 1.0) > 1e-6:
+            results = [(g, p / total) for g, p in results]
         return results
     else:
         raise RuntimeError("Unknown ActionType " + str(action.action_type))

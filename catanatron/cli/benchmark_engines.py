@@ -172,6 +172,20 @@ def _write_csv(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def _unique_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    parent = path.parent
+    i = 2
+    while True:
+        candidate = parent / f"{stem}__{i}{suffix}"
+        if not candidate.exists():
+            return candidate
+        i += 1
+
+
 def _build_markdown_report(
     label: str,
     baseline: str,
@@ -329,6 +343,12 @@ def _build_markdown_report(
     show_default=True,
     help="Directory for benchmark output files.",
 )
+@click.option(
+    "--md-archive-dir",
+    default="benchmark_md_by_date",
+    show_default=True,
+    help="Separate folder to archive benchmark markdown reports by benchmark end date.",
+)
 def benchmark_engines(
     candidates: str,
     baseline: str,
@@ -341,6 +361,7 @@ def benchmark_engines(
     workers: int | None,
     label: str | None,
     out_dir: str,
+    md_archive_dir: str,
 ):
     """
     Benchmark candidate engines against a baseline field.
@@ -542,6 +563,7 @@ def benchmark_engines(
             "seed_start": seed_start,
             "parallel": parallel,
             "workers": workers if parallel else 1,
+            "md_archive_dir": md_archive_dir,
             "elapsed_seconds": elapsed,
         },
         "overall": overall_rows,
@@ -566,11 +588,25 @@ def benchmark_engines(
     )
     report_md_path.write_text(report_md, encoding="utf-8")
 
+    # Also archive only the benchmark markdown report in a separate date-sorted folder.
+    finished_epoch = time.time()
+    finished_date = time.strftime("%Y-%m-%d", time.localtime(finished_epoch))
+    finished_stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(finished_epoch))
+    md_archive_root = Path(md_archive_dir)
+    ensure_dir(str(md_archive_root))
+    archive_date_dir = md_archive_root / finished_date
+    ensure_dir(str(archive_date_dir))
+    archive_md_path = _unique_path(
+        archive_date_dir / f"{finished_stamp}__{run_label}_report.md"
+    )
+    archive_md_path.write_text(report_md, encoding="utf-8")
+
     console.print(f"[green]Done.[/green] Runtime: {elapsed:.2f}s")
     console.print(f"Summary JSON: {summary_json_path}")
     console.print(f"Overall CSV:  {overall_csv_path}")
     console.print(f"Seat CSV:     {seat_csv_path}")
     console.print(f"Report MD:    {report_md_path}")
+    console.print(f"Report MD Archive: {archive_md_path}")
 
 
 if __name__ == "__main__":

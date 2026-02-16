@@ -94,6 +94,12 @@ Each run writes:
 
 Use `<label>_report.md` for the human-readable summary.
 
+Additionally, the benchmark auto-archives only the report MD into:
+
+- `benchmark_md_by_date/<YYYY-MM-DD>/<timestamp>__<label>_report.md`
+
+You can change that folder with `--md-archive-dir`.
+
 ---
 
 ## 5) How to interpret results

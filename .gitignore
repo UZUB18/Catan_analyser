@@ -17,6 +17,9 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+benchmark_results/
+benchmark_md_by_date/
+_tmp_*.py
 
 # IDE / OS
 .vscode/

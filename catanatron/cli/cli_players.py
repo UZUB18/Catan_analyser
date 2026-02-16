@@ -10,6 +10,7 @@ from catanatron.players.search import VictoryPointPlayer
 from catanatron.players.mcts import MCTSPlayer
 from catanatron.players.playouts import GreedyPlayoutsPlayer
 from catanatron.players.game_theory_engine import GameTheoryEngine
+from catanatron.players.game_theory_engine_v2 import GameTheoryEngineV2
 from catanatron.players.three_engines import (
     StatsEngine,
     WildSheepCultEngine,
@@ -76,6 +77,12 @@ CLI_PLAYERS = [
         GameTheoryEngine,
     ),
     CliPlayer(
+        "GTv2",
+        "GameTheoryEngineV2",
+        "Upgraded GT v1.3 engine with stronger EV search and robber-aware modeling.",
+        GameTheoryEngineV2,
+    ),
+    CliPlayer(
         "STAT",
         "StatsEngine",
         "Dice-probability and expected-value driven engine with risk-aware choices.",
@@ -112,6 +119,12 @@ def parse_cli_string(player_string):
         parts = key.split(":")
         code = parts[0]
         cli_player = players_by_code.get(code)
+        if cli_player is None:
+            case_insensitive = [
+                player for player in CLI_PLAYERS if player.code.upper() == code.upper()
+            ]
+            if len(case_insensitive) == 1:
+                cli_player = case_insensitive[0]
         if cli_player is None:
             available = ",".join(player.code for player in CLI_PLAYERS)
             raise ValueError(
