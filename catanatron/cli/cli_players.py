@@ -11,6 +11,8 @@ from catanatron.players.mcts import MCTSPlayer
 from catanatron.players.playouts import GreedyPlayoutsPlayer
 from catanatron.players.game_theory_engine import GameTheoryEngine
 from catanatron.players.game_theory_engine_v2 import GameTheoryEngineV2
+from catanatron.players.game_theory_engine_v3 import GameTheoryEngineV3
+from catanatron.players.game_theory_engine_v4 import GameTheoryEngineV4
 from catanatron.players.three_engines import (
     StatsEngine,
     WildSheepCultEngine,
@@ -81,6 +83,18 @@ CLI_PLAYERS = [
         "GameTheoryEngineV2",
         "Upgraded GT v1.3 engine with stronger EV search and robber-aware modeling.",
         GameTheoryEngineV2,
+    ),
+    CliPlayer(
+        "GTv3",
+        "GameTheoryEngineV3",
+        "Hybrid GT with persistent TT, iterative same-turn search, and opponent-reply modeling.",
+        GameTheoryEngineV3,
+    ),
+    CliPlayer(
+        "GTv4",
+        "GameTheoryEngineV4",
+        "GTv4 AB-killer: GTv3 + dynamic AB depth + sanity veto + instrumentation.",
+        GameTheoryEngineV4,
     ),
     CliPlayer(
         "STAT",
